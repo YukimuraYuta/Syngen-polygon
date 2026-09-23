@@ -102,6 +102,10 @@ export default function App() {
   };
 
   const handleStop = async () => {
+    const status = await apiRef.current.getWorkflowStatus();
+    if (status.jobId) {
+      await apiRef.current.clearImages(status.jobId);
+    }
     await apiRef.current.stopWorkflow();
     console.log("Workflow stop requested");
   };

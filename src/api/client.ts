@@ -76,6 +76,20 @@ export class ApiClient {
     return `${this.baseUrl}${path}`;
   }
 
+  async clearImages(jobId: string): Promise<{ success: boolean; cleared: number }> {
+    const res = await fetch(`${this.baseUrl}/api/images/clear`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to clear images: ${res.statusText}`);
+    }
+
+    return res.json();
+  }
+
   async getImageCount(): Promise<number> {
     const res = await fetch(`${this.baseUrl}/api/images/count`);
 

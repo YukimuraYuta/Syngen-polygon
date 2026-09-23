@@ -98,3 +98,11 @@ export function getImageByFilename(filename: string): ImageRecord | undefined {
   const database = getDb();
   return database.images.find((img) => img.filename === filename);
 }
+
+export function clearImagesByJobId(jobId: string): number {
+  const database = getDb();
+  const before = database.images.length;
+  database.images = database.images.filter((img) => img.jobId !== jobId);
+  saveDb(database);
+  return before - database.images.length;
+}

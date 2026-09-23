@@ -1,7 +1,7 @@
 import { Router } from "express";
 import path from "path";
 import fs from "fs";
-import { getImageCount, getLatestImages, getImageByFilename } from "../db/database";
+import { getImageCount, getLatestImages, getImageByFilename, clearImagesByJobId } from "../db/database";
 
 const router = Router();
 
@@ -62,6 +62,21 @@ router.get("/:filename", (_req, res) => {
   }
 
   res.sendFile(resolvedPath);
+});
+
+// Clear images for a specific job (called when workflow is stopped)
+router.post("/clear", (_req, res) => {
+  const { jobId } = _req.body;
+  if (!jobId) {
+    return res.status(400).json({ error: "jobId is required" });
+  }
+
+  try {
+    const cleared = clearImagesByJobId(jobId);
+    res.json({ success: true, cleared });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to clear images" });
+  }
 });
 
 export default router;
