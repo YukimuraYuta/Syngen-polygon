@@ -103,7 +103,7 @@ export default function LogsPanel({ messages, isConnected }: LogsPanelProps) {
                 return (
                   <div key={i} className="mb-1">
                     <span className="text-gray-500">[{formatTimestamp(
-                      msg.timestamp || new Date().toISOString()
+                      new Date().toISOString()
                     )}]</span>{" "}
                     <span className="text-blue-400">
                       Image generated (total: {msg.count})

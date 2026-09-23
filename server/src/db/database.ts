@@ -90,7 +90,11 @@ export function getImageCount(): number {
 
 export function getLatestImages(limit: number, offset: number): ImageRecord[] {
   const database = getDb();
-  // Images are appended in order; latest are at the end
   const sorted = [...database.images].reverse();
   return sorted.slice(offset, offset + limit);
+}
+
+export function getImageByFilename(filename: string): ImageRecord | undefined {
+  const database = getDb();
+  return database.images.find((img) => img.filename === filename);
 }

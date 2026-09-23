@@ -78,9 +78,19 @@ export default function App() {
     }
   }, []);
 
+  const fetchWorkflowStatus = useCallback(async () => {
+    try {
+      const status = await apiRef.current.getWorkflowStatus();
+      setIsRunning(status.running);
+    } catch {
+      // Backend not running yet - leave state as-is
+    }
+  }, []);
+
   useEffect(() => {
     fetchInitialCount();
-  }, [fetchInitialCount]);
+    fetchWorkflowStatus();
+  }, [fetchInitialCount, fetchWorkflowStatus]);
 
   const handleUploadComplete = (info: UploadResponse) => {
     setUploadedFile(info);

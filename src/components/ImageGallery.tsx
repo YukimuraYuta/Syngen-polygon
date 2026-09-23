@@ -101,7 +101,7 @@ export default function ImageGallery() {
                 className="aspect-square rounded-lg overflow-hidden border border-gray-700 hover:border-gray-500 transition-colors bg-gray-800"
               >
                 <img
-                  src={img.url}
+                  src={api.resolveImageUrl(img.url)}
                   alt={img.filename}
                   className="w-full h-full object-cover"
                   loading="lazy"

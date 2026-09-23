@@ -20,6 +20,11 @@ export interface StopWorkflowResponse {
   message: string;
 }
 
+export interface WorkflowStatusResponse {
+  running: boolean;
+  jobId: string | null;
+}
+
 export interface ImageInfo {
   id: string;
   filename: string;

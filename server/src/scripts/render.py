@@ -152,32 +152,25 @@ def setup_scene(args, mesh_objects):
     scene.camera = cam_obj
     cam_data.lens = 50  # 50mm default
 
-    # Key light (sun)
+    # Key light (sun) — balanced for visible but not harsh shadows
     key_light_data = bpy.data.lights.new("KeyLight", type="SUN")
     key_light_obj = bpy.data.objects.new("KeyLight", key_light_data)
     scene.collection.objects.link(key_light_obj)
     key_light_obj.rotation_euler = (math.radians(45), math.radians(-30), 0)
 
-    # Fill light (area)
-    fill_light_data = bpy.data.lights.new("FillLight", type="AREA")
-    fill_light_data.energy = 200
-    fill_light_data.size = 3
-    fill_light_obj = bpy.data.objects.new("FillLight", fill_light_data)
-    scene.collection.objects.link(fill_light_obj)
-    fill_light_obj.location = (5, -5, 5)
-
-    # White background world (use Standard view transform for pure white background)
+    # White background world — very low ambient to keep shadows visible but not washed out
     scene.view_settings.view_transform = "Standard"
     scene.display_settings.display_device = "sRGB"
+    scene.render.film_transparent = True  # Composite on white in post
     world = bpy.data.worlds.new("World")
     scene.world = world
     if world.node_tree:
         bg = world.node_tree.nodes.get("Background")
         if bg:
             bg.inputs["Color"].default_value = (1, 1, 1, 1)  # White
-            bg.inputs["Strength"].default_value = 1.0
+            bg.inputs["Strength"].default_value = 0.05  # Minimal ambient
 
-    # Large ground plane (appears to extend to infinity)
+    # Large white ground plane (appears to extend to infinity)
     bpy.ops.mesh.primitive_plane_add(size=500, location=(0, 0, 0))
     ground = bpy.context.active_object
     ground.name = "Ground"
@@ -186,46 +179,15 @@ def setup_scene(args, mesh_objects):
         bsdf = ground_mat.node_tree.nodes.get("Principled BSDF")
         if bsdf:
             bsdf.inputs["Base Color"].default_value = (1, 1, 1, 1.0)  # White
-            bsdf.inputs["Roughness"].default_value = 1.0
+            bsdf.inputs["Roughness"].default_value = 0.95
     ground.data.materials.append(ground_mat)
 
-    return scene, cam_obj, key_light_data, fill_light_obj
+    return scene, cam_obj, key_light_data
 
 
 # ─── Domain Randomization ────────────────────────────────────────────
 
-def hex_to_rgb(hex_color):
-    hex_color = hex_color.lstrip("#")
-    return (
-        int(hex_color[0: 2], 16) / 255.0,
-        int(hex_color[2: 4], 16) / 255.0,
-        int(hex_color[4: 6], 16) / 255.0,
-    )
-
-
-def temperature_to_rgb(kelvin):
-    """Approximate color temperature to RGB (0-1 range)."""
-    t = kelvin / 100.0
-    if t <= 66:
-        r = 255.0
-        g = t
-        g = 99.47081 + 0.358357 * g - 0.000299 * g**3 - 0.012176 * g**4
-        if t <= 19:
-            b = 0.0
-        else:
-            b = 138.5204 + 1.03837 * t - 0.000299 * t**3 - 0.012176 * t**4
-    else:
-        r = 329.17 + 0.16 * t**3 - 0.012176 * t**4
-        g = 288.16 + 0.12 * t**3 - 0.012176 * t**4
-        b = 255.0
-    return (
-        max(0, min(255, r)) / 255.0,
-        max(0, min(255, g)) / 255.0,
-        max(0, min(255, b)) / 255.0,
-    )
-
-
-def apply_dr_params(mesh_objects, params, cam_obj, key_light_data, fill_light_obj):
+def apply_dr_params(mesh_objects, params, cam_obj, key_light_data):
     """Apply domain randomization parameters to the scene."""
     # Object pose — prevent clipping through ground plane (Y=0)
     for obj in mesh_objects:
@@ -241,9 +203,8 @@ def apply_dr_params(mesh_objects, params, cam_obj, key_light_data, fill_light_ob
     # Material color — disabled per user request (keep original material colors)
 
     # Light intensity and color temperature
-    key_light_data.energy = params["lightIntensity"] * 3
-    r, g, b = temperature_to_rgb(params["lightTemperature"])
-    key_light_data.color = (r, g, b)
+    key_light_data.energy = params["lightIntensity"] * 20  # Balanced for visible shadows
+    key_light_data.color = (1.0, 1.0, 1.0)  # Neutral white — no color randomization
 
     # Camera position — ensure entire object fits in frame
     cam_pos = Vector(params["cameraPosition"])
@@ -326,24 +287,62 @@ def restore_materials(mesh_objects, original):
 
 # ─── Rendering ──────────────────────────────────────────────────────
 
+def composite_on_white(filepath):
+    """Composite a transparent PNG onto a white background."""
+    try:
+        img = bpy.data.images.load(filepath)
+        w = img.size[0]
+        h = img.size[1]
+        pixels = list(img.pixels)
+        new_pixels = []
+        for i in range(0, len(pixels), 4):
+            r, g, b, a = pixels[i:i+4]
+            new_pixels.append(r * a + (1 - a))
+            new_pixels.append(g * a + (1 - a))
+            new_pixels.append(b * a + (1 - a))
+            new_pixels.append(1.0)
+        result = bpy.data.images.new("Composited", width=w, height=h, alpha=False, float_buffer=False)
+        result.pixels = new_pixels
+        scene = bpy.context.scene
+        scene.render.image_settings.file_format = "PNG"
+        scene.render.image_settings.color_mode = "RGB"
+        scene.render.image_settings.color_depth = "8"
+        scene.render.use_overwrite = True
+        result.save_render(filepath=filepath)
+        bpy.data.images.remove(img)
+        bpy.data.images.remove(result)
+        log(f"Composited on white: {filepath}")
+    except Exception as e:
+        log(f"Post-processing failed: {e}")
+
+
 def render_rgb(scene, vl, filepath):
-    """Render the RGB combined pass as PNG."""
+    """Render the RGB pass with transparent background, then composite on white."""
     scene.render.image_settings.file_format = "PNG"
-    scene.render.image_settings.color_mode = "RGB"
+    scene.render.image_settings.color_mode = "RGBA"
     scene.render.image_settings.color_depth = "8"
-    scene.render.film_transparent = False
+    scene.render.film_transparent = True  # Transparent for compositing
     vl.use_pass_combined = True
     vl.use_pass_z = False
     vl.use_pass_object_index = False
     scene.render.filepath = filepath
     bpy.ops.render.render(write_still=True)
+    # Composite transparent -> white background
+    composite_on_white(filepath)
 
 
 def render_mask(scene, vl, mesh_objects, filepath):
     """Render segmentation mask using flat emission materials."""
     original = set_flat_materials(mesh_objects)
+    # Hide every other mesh (e.g. the ground plane) so the mask only contains
+    # the target object(s) on a transparent background.
+    hidden = []
+    for obj in scene.objects:
+        if obj.type == "MESH" and obj not in mesh_objects and not obj.hide_render:
+            obj.hide_render = True
+            hidden.append(obj)
     scene.render.image_settings.file_format = "PNG"
-    scene.render.image_settings.color_mode = "RGB"
+    scene.render.image_settings.color_mode = "RGBA"
     scene.render.image_settings.color_depth = "8"
     scene.render.film_transparent = True
     vl.use_pass_combined = True
@@ -351,6 +350,8 @@ def render_mask(scene, vl, mesh_objects, filepath):
     vl.use_pass_object_index = False
     scene.render.filepath = filepath
     bpy.ops.render.render(write_still=True)
+    for obj in hidden:
+        obj.hide_render = False
     restore_materials(mesh_objects, original)
 
 
@@ -361,12 +362,13 @@ def render_depth(scene, vl, filepath):
     scene.render.image_settings.color_depth = "16"
     vl.use_pass_combined = False
     vl.use_pass_z = True
+    scene.render.film_transparent = False  # Depth needs opaque background
     scene.render.filepath = filepath
     bpy.ops.render.render(write_still=True)
     # Restore defaults
     vl.use_pass_combined = True
     vl.use_pass_z = False
-    scene.render.film_transparent = False
+    scene.render.film_transparent = True
 
 
 # ─── Ground Truth Extraction ────────────────────────────────────────
@@ -544,7 +546,7 @@ def main():
     # Set up scene
     clear_scene()
     mesh_objects = import_model(args.model)
-    scene, cam_obj, key_light_data, fill_light_obj = setup_scene(args, mesh_objects)
+    scene, cam_obj, key_light_data = setup_scene(args, mesh_objects)
 
     view_layer = scene.view_layers[0]
 
@@ -558,7 +560,7 @@ def main():
         log(f"Rendering view {view_num}/{len(dr_params)}...")
 
         # Apply domain randomization
-        apply_dr_params(mesh_objects, params, cam_obj, key_light_data, fill_light_obj)
+        apply_dr_params(mesh_objects, params, cam_obj, key_light_data)
 
         filename_base = f"img_{args.job_id}_{view_num}"
 

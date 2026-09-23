@@ -4,6 +4,11 @@ import type { WSMessage } from "../types";
 
 let wss: WebSocketServer | null = null;
 
+// Track the latest status so newly connected clients (e.g. after a page
+// refresh) immediately learn whether a workflow is already running.
+let lastStatus: WSMessage = { type: "status", running: false };
+let lastImageCount = 0;
+
 export function initWebSocketServer(server: import("http").Server) {
   if (wss) {
     return wss;
@@ -13,6 +18,10 @@ export function initWebSocketServer(server: import("http").Server) {
 
   wss.on("connection", (socket) => {
     console.log("[WS] Client connected");
+
+    // Send current state so the UI is correct right after a refresh
+    socket.send(JSON.stringify(lastStatus));
+    socket.send(JSON.stringify({ type: "image_generated", count: lastImageCount }));
 
     socket.on("close", () => {
       console.log("[WS] Client disconnected");
@@ -56,14 +65,16 @@ export function log(message: string) {
 }
 
 export function setStatus(running: boolean, jobId?: string) {
-  broadcast({
+  lastStatus = {
     type: "status",
     running,
     jobId,
-  });
+  };
+  broadcast(lastStatus);
 }
 
 export function notifyImageGenerated(count: number) {
+  lastImageCount = count;
   broadcast({
     type: "image_generated",
     count,

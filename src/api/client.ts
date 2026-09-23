@@ -2,6 +2,7 @@ import type {
   UploadResponse,
   StartWorkflowResponse,
   StopWorkflowResponse,
+  WorkflowStatusResponse,
   ImagesResponse,
   WSMessage,
 } from "../types";
@@ -54,6 +55,25 @@ export class ApiClient {
     }
 
     return res.json();
+  }
+
+  async getWorkflowStatus(): Promise<WorkflowStatusResponse> {
+    const res = await fetch(`${this.baseUrl}/api/workflow/status`);
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch workflow status: ${res.statusText}`);
+    }
+
+    return res.json();
+  }
+
+  // Resolve a (possibly relative) image URL against the API origin so <img> tags
+  // load from the backend instead of the frontend dev server.
+  resolveImageUrl(url: string): string {
+    if (!url) return url;
+    if (/^https?:\/\//i.test(url)) return url;
+    const path = url.startsWith("/") ? url : `/${url}`;
+    return `${this.baseUrl}${path}`;
   }
 
   async getImageCount(): Promise<number> {

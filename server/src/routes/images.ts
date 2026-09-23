@@ -1,8 +1,7 @@
 import { Router } from "express";
 import path from "path";
 import fs from "fs";
-import { paths } from "../config";
-import { getImageCount, getLatestImages } from "../db/database";
+import { getImageCount, getLatestImages, getImageByFilename } from "../db/database";
 
 const router = Router();
 
@@ -47,18 +46,19 @@ router.get("/", (_req, _res, next) => {
 // Serve static image files - must be last
 router.get("/:filename", (_req, res) => {
   const { filename } = _req.params;
-  const imageDir = paths.images;
-  const filePath = path.join(imageDir, filename);
+
+  // Look up the actual file path from the database
+  const img = getImageByFilename(filename);
+  if (!img) {
+    return res.status(404).json({ error: "Image not found" });
+  }
+
+  const filePath = img.path;
 
   // Prevent directory traversal
   const resolvedPath = path.resolve(filePath);
-  const resolvedDir = path.resolve(imageDir);
-  if (!resolvedPath.startsWith(resolvedDir)) {
-    return res.status(403).json({ error: "Access denied" });
-  }
-
   if (!fs.existsSync(resolvedPath)) {
-    return res.status(404).json({ error: "Image not found" });
+    return res.status(404).json({ error: "Image file not found on disk" });
   }
 
   res.sendFile(resolvedPath);
