@@ -12,6 +12,19 @@ dist
 dist-ssr
 *.local
 
+# Build output and generated data
+output/
+server/output/
+test_model.glb
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# CommandCode
+.commandcode/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
